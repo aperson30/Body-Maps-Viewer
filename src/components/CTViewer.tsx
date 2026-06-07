@@ -164,7 +164,7 @@ export default function CTViewer() {
             if (counts[i] > 0) {
               stats[organ.id] = {
                 volumeMl: parseFloat((counts[i] * voxelMl).toFixed(1)),
-                meanHU:   Math.round(huSums[i] / counts[i]),
+                meanHU:   0, // reserved for future use
               };
             }
           });
@@ -536,7 +536,7 @@ export default function CTViewer() {
                       {hov && (
                         <span className="text-[9px] font-mono leading-tight" style={{ color: organ.hex }}>
                           {stat
-                            ? `${stat.volumeMl} mL · ${stat.meanHU} HU`
+                            ? `${stat.volumeMl.toLocaleString()} mL`
                             : 'calculating…'}
                         </span>
                       )}
