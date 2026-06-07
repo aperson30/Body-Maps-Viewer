@@ -183,6 +183,21 @@ export default function CTViewer() {
     const nv = nvRef.current;
     if (!nv) return;
     setViewMode(mode);
+
+    // Batch-write opacity directly on volume objects (no per-call GPU redraw).
+    // setSliceType at the end triggers the single unified drawScene call.
+    if (mode === '3d') {
+      if (nv.volumes[0]) nv.volumes[0].opacity = 0.07;
+      ORGANS.forEach((organ, i) => {
+        if (nv.volumes[i + 1]) nv.volumes[i + 1].opacity = visible[organ.id] ? 0.9 : 0;
+      });
+    } else {
+      if (nv.volumes[0]) nv.volumes[0].opacity = 1;
+      ORGANS.forEach((organ, i) => {
+        if (nv.volumes[i + 1]) nv.volumes[i + 1].opacity = visible[organ.id] ? opacity : 0;
+      });
+    }
+
     const map: Record<ViewMode, number> = {
       axial:    nv.sliceTypeAxial,
       sagittal: nv.sliceTypeSagittal,
@@ -190,21 +205,7 @@ export default function CTViewer() {
       mpr:      nv.sliceTypeMultiplanar,
       '3d':     nv.sliceTypeRender,
     };
-    nv.setSliceType(map[mode]);
-
-    // In 3D mode: make CT body semi-transparent so colored organs pop through.
-    // In 2D modes: restore CT to fully opaque.
-    if (mode === '3d') {
-      if (nv.volumes[0]) nv.setOpacity(0, 0.07);
-      ORGANS.forEach((organ, i) => {
-        if (nv.volumes[i + 1]) nv.setOpacity(i + 1, visible[organ.id] ? 0.9 : 0);
-      });
-    } else {
-      if (nv.volumes[0]) nv.setOpacity(0, 1);
-      ORGANS.forEach((organ, i) => {
-        if (nv.volumes[i + 1]) nv.setOpacity(i + 1, visible[organ.id] ? opacity : 0);
-      });
-    }
+    nv.setSliceType(map[mode]); // triggers the single final drawScene
   }, [visible, opacity]);
 
   // ── W/L preset ─────────────────────────────────────────────────────────────
@@ -233,9 +234,11 @@ export default function CTViewer() {
     if (!nv) return;
     const next = Object.fromEntries(ORGANS.map(o => [o.id, show])) as Record<OrganId, boolean>;
     setVisible(next);
+    // Batch-write, single drawScene at end
     ORGANS.forEach((_, i) => {
-      if (nv.volumes[i + 1] !== undefined) nv.setOpacity(i + 1, show ? opacity : 0);
+      if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = show ? opacity : 0;
     });
+    nv.drawScene?.();
   }, [opacity]);
 
   // ── Opacity ────────────────────────────────────────────────────────────────
@@ -243,8 +246,9 @@ export default function CTViewer() {
     const nv = nvRef.current;
     if (!nv) return;
     ORGANS.forEach((organ, i) => {
-      if (visible[organ.id]) nv.setOpacity(i + 1, val);
+      if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = visible[organ.id] ? val : 0;
     });
+    nv.drawScene?.();
   }, [visible]);
 
   // ── File loading helpers ───────────────────────────────────────────────────
