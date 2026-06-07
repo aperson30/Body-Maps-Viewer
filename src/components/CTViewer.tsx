@@ -155,7 +155,7 @@ export default function CTViewer() {
           for (let j = 0; j < n; j++) {
             const hu = ctData[j];
             for (let i = 0; i < ORGANS.length; i++) {
-              if (maskArrays[i]?.[j] > 0.5) { counts[i]++; huSums[i] += hu; }
+              if ((maskArrays[i]?.[j] ?? 0) > 0.5) { counts[i]++; huSums[i] += hu; }
             }
           }
 
