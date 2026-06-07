@@ -650,17 +650,20 @@ export default function CTViewer() {
             <div className="flex flex-col gap-2 text-xs">
               {[
                 ['Left click/drag', 'Move crosshair (2D) · Rotate (3D)'],
-                ['Right drag',      'Zoom'],
+                ['Right drag',      'Adjust brightness / contrast (W/L)'],
                 ['Scroll wheel',    'Scroll through slices'],
                 ['Double-click',    'Reset view'],
                 ['Drag & drop',     'Load .nii.gz file'],
               ].map(([key, val]) => (
-                <div key={key} className="flex justify-between">
-                  <span className="text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded">{key}</span>
-                  <span className="text-gray-300">{val}</span>
+                <div key={key} className="flex justify-between gap-3">
+                  <span className="text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded shrink-0">{key}</span>
+                  <span className="text-gray-300 text-right">{val}</span>
                 </div>
               ))}
             </div>
+            <p className="text-[10px] text-gray-600 mt-3 leading-relaxed">
+              Tip: use the CT Window presets to reset brightness after adjusting.
+            </p>
           </div>
         </div>
       )}
