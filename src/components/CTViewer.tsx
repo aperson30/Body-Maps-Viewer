@@ -142,20 +142,18 @@ export default function CTViewer() {
       setTimeout(() => {
         try {
           const ctVol = nv.volumes[0];
-          if (!ctVol?.img) return;
-          const ctData = ctVol.img as Float32Array;
+          if (!ctVol) return;
           const pd = ctVol.pixDims;
           const voxelMl = pd ? Math.abs(pd[1]) * Math.abs(pd[2]) * Math.abs(pd[3]) / 1000 : 1;
 
           const maskArrays = ORGANS.map((_, i) => nv.volumes[i + 1]?.img as Float32Array | undefined);
-          const counts  = new Array(ORGANS.length).fill(0);
-          const huSums  = new Array(ORGANS.length).fill(0);
-          const n = ctData.length;
+          if (!maskArrays[0]) return; // masks not yet loaded
+          const counts = new Array(ORGANS.length).fill(0);
+          const n = maskArrays[0]!.length;
 
           for (let j = 0; j < n; j++) {
-            const hu = ctData[j];
             for (let i = 0; i < ORGANS.length; i++) {
-              if ((maskArrays[i]?.[j] ?? 0) > 0.5) { counts[i]++; huSums[i] += hu; }
+              if ((maskArrays[i]?.[j] ?? 0) > 0.5) { counts[i]++; }
             }
           }
 
@@ -286,8 +284,13 @@ export default function CTViewer() {
 
   // ── Screenshot ────────────────────────────────────────────────────────────
   const takeScreenshot = useCallback(() => {
+    const nv     = nvRef.current;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !nv) return;
+    // WebGL canvases may have an empty back-buffer if preserveDrawingBuffer is
+    // false (the default). Force NiiVue to redraw synchronously so toDataURL
+    // captures the live scene rather than a blank frame.
+    nv.drawScene?.();
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
@@ -642,12 +645,11 @@ export default function CTViewer() {
             </div>
             <div className="flex flex-col gap-2 text-xs">
               {[
-                ['Left drag',     'Pan view'],
-                ['Right drag',    'Zoom'],
-                ['Scroll wheel',  'Scroll through slices'],
-                ['Click',         'Move crosshair'],
-                ['Double-click',  'Reset zoom'],
-                ['Drag & drop',   'Load .nii.gz file'],
+                ['Left click/drag', 'Move crosshair (2D) · Rotate (3D)'],
+                ['Right drag',      'Zoom'],
+                ['Scroll wheel',    'Scroll through slices'],
+                ['Double-click',    'Reset view'],
+                ['Drag & drop',     'Load .nii.gz file'],
               ].map(([key, val]) => (
                 <div key={key} className="flex justify-between">
                   <span className="text-gray-400 font-mono bg-gray-800 px-2 py-0.5 rounded">{key}</span>
