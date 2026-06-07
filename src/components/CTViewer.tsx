@@ -64,8 +64,10 @@ export default function CTViewer() {
     hu: number | null; mm: number[]; vox: number[]
   }>({ hu: null, mm: [], vox: [] });
   const [spacing, setSpacing] = useState<[number, number, number] | null>(null);
-  const [showAbout,   setShowAbout]   = useState(false);
+  const [showAbout,    setShowAbout]    = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [hoveredOrgan, setHoveredOrgan] = useState<OrganId | null>(null);
+  const [organStats,   setOrganStats]   = useState<Partial<Record<OrganId, { volumeMl: number; meanHU: number }>>>({});
 
   // ── Init NiiVue ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -135,6 +137,41 @@ export default function CTViewer() {
       nv.setSliceType(nv.sliceTypeMultiplanar);
 
       if (!cancelled) setLoading(false);
+
+      // ── Organ volume & HU stats (single pass over voxel data) ──────────────
+      setTimeout(() => {
+        try {
+          const ctVol = nv.volumes[0];
+          if (!ctVol?.img) return;
+          const ctData = ctVol.img as Float32Array;
+          const pd = ctVol.pixDims;
+          const voxelMl = pd ? Math.abs(pd[1]) * Math.abs(pd[2]) * Math.abs(pd[3]) / 1000 : 1;
+
+          const maskArrays = ORGANS.map((_, i) => nv.volumes[i + 1]?.img as Float32Array | undefined);
+          const counts  = new Array(ORGANS.length).fill(0);
+          const huSums  = new Array(ORGANS.length).fill(0);
+          const n = ctData.length;
+
+          for (let j = 0; j < n; j++) {
+            const hu = ctData[j];
+            for (let i = 0; i < ORGANS.length; i++) {
+              if (maskArrays[i]?.[j] > 0.5) { counts[i]++; huSums[i] += hu; }
+            }
+          }
+
+          const stats: Partial<Record<OrganId, { volumeMl: number; meanHU: number }>> = {};
+          ORGANS.forEach((organ, i) => {
+            if (counts[i] > 0) {
+              stats[organ.id] = {
+                volumeMl: parseFloat((counts[i] * voxelMl).toFixed(1)),
+                meanHU:   Math.round(huSums[i] / counts[i]),
+              };
+            }
+          });
+          if (!cancelled) setOrganStats(stats);
+        } catch (_) { /* silently ignore */ }
+      }, 600);
+
     })().catch(err => {
       console.error(err);
       setLoadingMsg('Error loading data — check console.');
@@ -477,12 +514,16 @@ export default function CTViewer() {
 
             <div className="flex flex-col gap-0.5">
               {ORGANS.map(organ => {
-                const on = visible[organ.id];
+                const on   = visible[organ.id];
+                const stat = organStats[organ.id];
+                const hov  = hoveredOrgan === organ.id;
                 return (
                   <button
                     key={organ.id}
                     onClick={() => toggleOrgan(organ.id)}
-                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded transition-all ${
+                    onMouseEnter={() => setHoveredOrgan(organ.id)}
+                    onMouseLeave={() => setHoveredOrgan(null)}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded transition-all text-left ${
                       on ? 'bg-gray-800/80 text-white' : 'text-gray-600 hover:text-gray-400 hover:bg-gray-900'
                     }`}
                   >
@@ -490,7 +531,16 @@ export default function CTViewer() {
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.25 }}
                     />
-                    {organ.name}
+                    <div className="flex flex-col">
+                      <span>{organ.name}</span>
+                      {hov && (
+                        <span className="text-[9px] font-mono leading-tight" style={{ color: organ.hex }}>
+                          {stat
+                            ? `${stat.volumeMl} mL · ${stat.meanHU} HU`
+                            : 'calculating…'}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
