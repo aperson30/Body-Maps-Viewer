@@ -565,8 +565,8 @@ export default function CTViewer() {
                           type="range" min={0.05} max={1} step={0.05} value={op}
                           onChange={e => setOpacities(prev => ({ ...prev, [organ.id]: parseFloat(e.target.value) }))}
                           onPointerUp={e => commitOrganOpacity(organ.id, parseFloat((e.target as HTMLInputElement).value))}
-                          className="flex-1 cursor-pointer"
-                          style={{ accentColor: organ.hex, height: '2px' }}
+                          className="organ-slider flex-1"
+                          style={{ '--thumb-color': organ.hex } as React.CSSProperties}
                         />
                         <span className="text-[9px] text-gray-600 w-6 text-right shrink-0 tabular-nums">
                           {Math.round(op * 100)}%

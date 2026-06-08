@@ -13,3 +13,30 @@ canvas {
   width: 100% !important;
   height: 100% !important;
 }
+
+/* Per-organ opacity sliders — small thumb, organ-colored */
+input[type="range"].organ-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 1px;
+  outline: none;
+}
+input[type="range"].organ-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  background: var(--thumb-color, #fff);
+}
+input[type="range"].organ-slider::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  background: var(--thumb-color, #fff);
+  border: none;
+}
