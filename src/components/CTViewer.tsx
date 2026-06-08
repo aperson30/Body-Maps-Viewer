@@ -75,7 +75,14 @@ export default function CTViewer() {
     let cancelled = false;
 
     (async () => {
-      const { Niivue, NVImage } = await import('@niivue/niivue');
+      // Kick off CT data fetch immediately — runs in parallel with the NiiVue
+      // dynamic import so the 17 MB download overlaps with JS parsing time.
+      const ctFetchPromise = fetch(`${BASE}/ct.nii.gz`).then(r => r.arrayBuffer());
+
+      const [{ Niivue, NVImage }] = await Promise.all([
+        import('@niivue/niivue'),
+        ctFetchPromise, // keep it warm in the Promise while NiiVue loads
+      ]);
       if (cancelled) return;
 
       const nv = new Niivue({
@@ -98,14 +105,18 @@ export default function CTViewer() {
 
       await nv.attachToCanvas(canvasRef.current!);
 
-      // Load CT
+      // Load CT from the already-fetched buffer (no second network round-trip)
       setLoadingMsg('Loading CT scan…');
+      const ctBuffer = await ctFetchPromise;
+      const ctBlob = new Blob([ctBuffer]);
+      const ctObjectUrl = URL.createObjectURL(ctBlob);
       await nv.loadVolumes([{
-        url:      `${BASE}/ct.nii.gz`,
+        url:      ctObjectUrl,
         colormap: 'gray',
         cal_min:  -160,
         cal_max:  240,
       }]);
+      URL.revokeObjectURL(ctObjectUrl);
 
       // ── Parallel mask loading (all 9 at once — much faster than sequential) ──
       setLoadingMsg('Loading segmentations…');
