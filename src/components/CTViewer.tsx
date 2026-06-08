@@ -69,6 +69,7 @@ export default function CTViewer() {
   const [showAbout,    setShowAbout]    = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [organStats,   setOrganStats]   = useState<Partial<Record<OrganId, { volumeMl: number; meanHU: number }>>>({});
+  const [isMeasuring,  setIsMeasuring]  = useState(false);
 
   // ── Init NiiVue ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -143,18 +144,26 @@ export default function CTViewer() {
       setTimeout(() => {
         try {
           const ctVol = nv.volumes[0];
-          if (!ctVol) return;
+          if (!ctVol?.img) return;
+          const ctData = ctVol.img as Float32Array;
           const pd = ctVol.pixDims;
           const voxelMl = pd ? Math.abs(pd[1]) * Math.abs(pd[2]) * Math.abs(pd[3]) / 1000 : 1;
+          // Apply NIfTI scl_slope / scl_inter to convert raw voxel values → HU
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const hdr = (ctVol as any).hdr;
+          const slope = (hdr?.scl_slope && hdr.scl_slope !== 0) ? hdr.scl_slope : 1;
+          const inter = hdr?.scl_inter ?? 0;
 
           const maskArrays = ORGANS.map((_, i) => nv.volumes[i + 1]?.img as Float32Array | undefined);
-          if (!maskArrays[0]) return; // masks not yet loaded
+          if (!maskArrays[0]) return;
           const counts = new Array(ORGANS.length).fill(0);
+          const huSums = new Array(ORGANS.length).fill(0);
           const n = maskArrays[0]!.length;
 
           for (let j = 0; j < n; j++) {
+            const raw = ctData[j];
             for (let i = 0; i < ORGANS.length; i++) {
-              if ((maskArrays[i]?.[j] ?? 0) > 0.5) { counts[i]++; }
+              if ((maskArrays[i]?.[j] ?? 0) > 0.5) { counts[i]++; huSums[i] += raw; }
             }
           }
 
@@ -163,7 +172,7 @@ export default function CTViewer() {
             if (counts[i] > 0) {
               stats[organ.id] = {
                 volumeMl: parseFloat((counts[i] * voxelMl).toFixed(1)),
-                meanHU:   0, // reserved for future use
+                meanHU:   Math.round((huSums[i] / counts[i]) * slope + inter),
               };
             }
           });
@@ -251,6 +260,40 @@ export default function CTViewer() {
       nv.updateGLVolume();
     }
   }, [visible]);
+
+  // ── Isolate organ (click name to solo; click again to restore all) ─────────
+  const isolateOrgan = useCallback((id: OrganId) => {
+    const nv = nvRef.current;
+    if (!nv) return;
+    const alreadyIsolated = visible[id] && ORGANS.every(o => o.id === id || !visible[o.id]);
+    if (alreadyIsolated) {
+      // Restore all
+      setVisible(Object.fromEntries(ORGANS.map(o => [o.id, true])) as Record<OrganId, boolean>);
+      ORGANS.forEach((organ, i) => {
+        if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = opacities[organ.id];
+      });
+    } else {
+      // Solo this organ
+      setVisible(Object.fromEntries(ORGANS.map(o => [o.id, o.id === id])) as Record<OrganId, boolean>);
+      ORGANS.forEach((organ, i) => {
+        if (nv.volumes[i + 1] !== undefined)
+          nv.volumes[i + 1].opacity = organ.id === id ? opacities[organ.id] : 0;
+      });
+    }
+    nv.updateGLVolume();
+  }, [visible, opacities]);
+
+  // ── Distance measurement mode ──────────────────────────────────────────────
+  const toggleMeasure = useCallback(() => {
+    const nv = nvRef.current;
+    if (!nv) return;
+    setIsMeasuring(prev => {
+      const next = !prev;
+      // NiiVue dragMode: 1 = contrast (W/L), 2 = measurement ruler
+      nv.opts.dragMode = next ? 2 : 1;
+      return next;
+    });
+  }, []);
 
   // ── File loading helpers ───────────────────────────────────────────────────
   const loadFileAsOverlay = useCallback(async (file: File, colormap = 'gray', opacity = 1) => {
@@ -386,6 +429,20 @@ export default function CTViewer() {
 
         {/* Right-side header actions */}
         <div className="ml-auto flex items-center gap-1">
+          {/* Distance measurement toggle */}
+          <button
+            onClick={toggleMeasure}
+            title={isMeasuring ? 'Exit measurement mode (left-drag to measure)' : 'Measure distance (left-drag on image)'}
+            className={`p-1.5 rounded transition-colors ${
+              isMeasuring
+                ? 'bg-yellow-500/20 text-yellow-400 ring-1 ring-yellow-500/50'
+                : 'hover:bg-gray-700 text-gray-400 hover:text-white'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 20l18-16M5.5 17.5l1 1m3-3.5l1 1m3-3.5l1 1m3-3.5l1 1" />
+            </svg>
+          </button>
           {/* Screenshot */}
           <button
             onClick={takeScreenshot}
@@ -531,8 +588,9 @@ export default function CTViewer() {
                     key={organ.id}
                     className={`rounded px-1.5 py-1 transition-colors ${on ? 'bg-gray-800/60' : ''}`}
                   >
-                    {/* Row: eye · dot · name · volume */}
+                    {/* Row: eye · [name + stats — click to isolate] */}
                     <div className="flex items-center gap-1.5">
+                      {/* Eye: toggle visibility */}
                       <button
                         onClick={() => toggleOrgan(organ.id)}
                         title={on ? 'Hide' : 'Show'}
@@ -549,14 +607,25 @@ export default function CTViewer() {
                           </svg>
                         )}
                       </button>
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.3 }} />
-                      <span className={`flex-1 text-xs truncate ${on ? 'text-white' : 'text-gray-600'}`}>
-                        {organ.name}
-                      </span>
-                      <span className="text-[9px] font-mono shrink-0 tabular-nums"
-                        style={{ color: stat && on ? organ.hex : 'transparent' }}>
-                        {stat ? `${stat.volumeMl.toLocaleString()}` : '0'}
-                      </span>
+                      {/* Name + stats: click to isolate / un-isolate */}
+                      <button
+                        onClick={() => isolateOrgan(organ.id)}
+                        title="Click to isolate · click again to restore all"
+                        className="flex flex-1 items-center gap-1.5 min-w-0 text-left hover:opacity-80 transition-opacity"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.3 }} />
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-xs truncate ${on ? 'text-white' : 'text-gray-600'}`}>{organ.name}</div>
+                          {stat && on && (
+                            <div className="text-[9px] font-mono tabular-nums leading-tight">
+                              <span style={{ color: organ.hex }}>{stat.volumeMl.toLocaleString()} mL</span>
+                              {stat.meanHU !== 0 && (
+                                <span className="text-gray-500 ml-1">{stat.meanHU} HU</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </button>
                     </div>
                     {/* Per-organ opacity slider — only when visible */}
                     {on && (
