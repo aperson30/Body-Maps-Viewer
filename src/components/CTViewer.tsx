@@ -5,16 +5,32 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // ── Constants ────────────────────────────────────────────────────────────────
 const BASE = '/data/BDMAP_00000338';
 
+// Custom colormap RGB endpoints (black → organ color).
+// NiiVue only recognises a small set of built-in names; unknown names silently
+// fall back to gray.  We register a two-stop custom colormap for every organ
+// so the exact hex color is always used, regardless of NiiVue version.
+const ORGAN_CMAP_RGB: Record<string, [number, number, number]> = {
+  liver:        [239,  68,  68],  // #ef4444
+  spleen:       [ 59, 130, 246],  // #3b82f6
+  pancreas:     [234, 179,   8],  // #eab308
+  kidney_left:  [ 34, 197,  94],  // #22c55e
+  kidney_right: [  6, 182, 212],  // #06b6d4
+  aorta:        [249, 115,  22],  // #f97316
+  stomach:      [236,  72, 153],  // #ec4899
+  postcava:     [168,  85, 247],  // #a855f7
+  gall_bladder: [132, 204,  22],  // #84cc16
+};
+
 const ORGANS = [
-  { id: 'liver',        name: 'Liver',        colormap: 'red',    hex: '#ef4444' },
-  { id: 'spleen',       name: 'Spleen',       colormap: 'blue',   hex: '#3b82f6' },
-  { id: 'pancreas',     name: 'Pancreas',     colormap: 'yellow', hex: '#eab308' },
-  { id: 'kidney_left',  name: 'Left Kidney',  colormap: 'green',  hex: '#22c55e' },
-  { id: 'kidney_right', name: 'Right Kidney', colormap: 'cyan',   hex: '#06b6d4' },
-  { id: 'aorta',        name: 'Aorta',        colormap: 'warm',   hex: '#f97316' },
-  { id: 'stomach',      name: 'Stomach',      colormap: 'pink',   hex: '#ec4899' },
-  { id: 'postcava',     name: 'Postcava',     colormap: 'winter', hex: '#a855f7' },
-  { id: 'gall_bladder', name: 'Gallbladder',  colormap: 'summer', hex: '#84cc16' },
+  { id: 'liver',        name: 'Liver',        colormap: 'liver',        hex: '#ef4444' },
+  { id: 'spleen',       name: 'Spleen',       colormap: 'spleen',       hex: '#3b82f6' },
+  { id: 'pancreas',     name: 'Pancreas',     colormap: 'pancreas',     hex: '#eab308' },
+  { id: 'kidney_left',  name: 'Left Kidney',  colormap: 'kidney_left',  hex: '#22c55e' },
+  { id: 'kidney_right', name: 'Right Kidney', colormap: 'kidney_right', hex: '#06b6d4' },
+  { id: 'aorta',        name: 'Aorta',        colormap: 'aorta',        hex: '#f97316' },
+  { id: 'stomach',      name: 'Stomach',      colormap: 'stomach',      hex: '#ec4899' },
+  { id: 'postcava',     name: 'Postcava',     colormap: 'postcava',     hex: '#a855f7' },
+  { id: 'gall_bladder', name: 'Gallbladder',  colormap: 'gall_bladder', hex: '#84cc16' },
 ] as const;
 
 type OrganId = typeof ORGANS[number]['id'];
@@ -99,6 +115,13 @@ export default function CTViewer() {
       };
 
       await nv.attachToCanvas(canvasRef.current!);
+
+      // Register custom per-organ colormaps (black → organ color).
+      // Must happen after attachToCanvas but before loadVolumes.
+      ORGANS.forEach(organ => {
+        const [r, g, b] = ORGAN_CMAP_RGB[organ.id];
+        nv.addColormap(organ.id, { R: [0, r], G: [0, g], B: [0, b], A: [0, 255], I: [0, 255] });
+      });
 
       // Load CT (browser may already have it cached from the <link rel="preload"> hint)
       setLoadingMsg('Loading CT scan…');
