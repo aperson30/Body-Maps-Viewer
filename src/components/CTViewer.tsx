@@ -55,7 +55,9 @@ export default function CTViewer() {
   const [activePreset, setActivePreset] = useState<PresetName>('Soft Tissue');
   // PresetName type is inferred from WL_PRESETS — 'Brain' is now 'Liver'
   const [viewMode,     setViewMode]     = useState<ViewMode>('mpr');
-  const [opacity,      setOpacity]      = useState(0.6);
+  const [opacities, setOpacities] = useState<Record<OrganId, number>>(
+    Object.fromEntries(ORGANS.map(o => [o.id, 0.6])) as Record<OrganId, number>
+  );
   const [isDragOver,   setIsDragOver]   = useState(false);
   const [visible, setVisible] = useState<Record<OrganId, boolean>>(
     Object.fromEntries(ORGANS.map(o => [o.id, true])) as Record<OrganId, boolean>
@@ -193,10 +195,10 @@ export default function CTViewer() {
     } else {
       if (nv.volumes[0]) nv.volumes[0].opacity = 1;
       ORGANS.forEach((organ, i) => {
-        if (nv.volumes[i + 1]) nv.volumes[i + 1].opacity = visible[organ.id] ? opacity : 0;
+        if (nv.volumes[i + 1]) nv.volumes[i + 1].opacity = visible[organ.id] ? opacities[organ.id] : 0;
       });
     }
-    nv.updateGLVolume(); // push all opacity changes to GPU in one shot
+    nv.updateGLVolume();
 
     const map: Record<ViewMode, number> = {
       axial:    nv.sliceTypeAxial,
@@ -206,7 +208,7 @@ export default function CTViewer() {
       '3d':     nv.sliceTypeRender,
     };
     nv.setSliceType(map[mode]);
-  }, [visible, opacity]);
+  }, [visible, opacities]);
 
   // ── W/L preset ─────────────────────────────────────────────────────────────
   const applyPreset = useCallback((preset: typeof WL_PRESETS[number]) => {
@@ -225,29 +227,29 @@ export default function CTViewer() {
     const nowVisible = !visible[id];
     setVisible(prev => ({ ...prev, [id]: nowVisible }));
     const idx = ORGANS.findIndex(o => o.id === id) + 1;
-    if (nv.volumes[idx] !== undefined) nv.setOpacity(idx, nowVisible ? opacity : 0);
-  }, [visible, opacity]);
+    if (nv.volumes[idx] !== undefined) nv.setOpacity(idx, nowVisible ? opacities[id] : 0);
+  }, [visible, opacities]);
 
   // ── Show all / Hide all ────────────────────────────────────────────────────
   const toggleAll = useCallback((show: boolean) => {
     const nv = nvRef.current;
     if (!nv) return;
-    const next = Object.fromEntries(ORGANS.map(o => [o.id, show])) as Record<OrganId, boolean>;
-    setVisible(next);
-    ORGANS.forEach((_, i) => {
-      if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = show ? opacity : 0;
+    setVisible(Object.fromEntries(ORGANS.map(o => [o.id, show])) as Record<OrganId, boolean>);
+    ORGANS.forEach((organ, i) => {
+      if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = show ? opacities[organ.id] : 0;
     });
     nv.updateGLVolume();
-  }, [opacity]);
+  }, [opacities]);
 
-  // ── Opacity ────────────────────────────────────────────────────────────────
-  const commitOpacity = useCallback((val: number) => {
+  // ── Per-organ opacity ──────────────────────────────────────────────────────
+  const commitOrganOpacity = useCallback((id: OrganId, val: number) => {
     const nv = nvRef.current;
     if (!nv) return;
-    ORGANS.forEach((organ, i) => {
-      if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = visible[organ.id] ? val : 0;
-    });
-    nv.updateGLVolume();
+    const idx = ORGANS.findIndex(o => o.id === id) + 1;
+    if (nv.volumes[idx] !== undefined && visible[id]) {
+      nv.volumes[idx].opacity = val;
+      nv.updateGLVolume();
+    }
   }, [visible]);
 
   // ── File loading helpers ───────────────────────────────────────────────────
@@ -497,9 +499,10 @@ export default function CTViewer() {
           {/* Segmentations */}
           <section className="p-3 border-b border-gray-800">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
-                Segmentations
-              </span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Segmentations</span>
+                <span className="text-[9px] text-gray-600">mL</span>
+              </div>
               {/* Show all / Hide all */}
               <div className="flex gap-1">
                 <button
@@ -518,55 +521,65 @@ export default function CTViewer() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-px">
               {ORGANS.map(organ => {
-                const on   = visible[organ.id];
+                const on  = visible[organ.id];
                 const stat = organStats[organ.id];
+                const op  = opacities[organ.id];
                 return (
-                  <button
+                  <div
                     key={organ.id}
-                    onClick={() => toggleOrgan(organ.id)}
-                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded transition-all text-left ${
-                      on ? 'bg-gray-800/80 text-white' : 'text-gray-600 hover:text-gray-400 hover:bg-gray-900'
-                    }`}
+                    className={`rounded px-1.5 py-1 transition-colors ${on ? 'bg-gray-800/60' : ''}`}
                   >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.25 }}
-                    />
-                    <div className="flex flex-1 items-baseline justify-between gap-1 min-w-0">
-                      <span className="truncate">{organ.name}</span>
-                      <span
-                        className="text-[9px] font-mono shrink-0"
-                        style={{ color: stat ? organ.hex : 'transparent' }}
+                    {/* Row: eye · dot · name · volume */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => toggleOrgan(organ.id)}
+                        title={on ? 'Hide' : 'Show'}
+                        className={`shrink-0 transition-colors ${on ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-400'}`}
                       >
-                        {stat ? `${stat.volumeMl.toLocaleString()} mL` : '———'}
+                        {on ? (
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        )}
+                      </button>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.3 }} />
+                      <span className={`flex-1 text-xs truncate ${on ? 'text-white' : 'text-gray-600'}`}>
+                        {organ.name}
+                      </span>
+                      <span className="text-[9px] font-mono shrink-0 tabular-nums"
+                        style={{ color: stat && on ? organ.hex : 'transparent' }}>
+                        {stat ? `${stat.volumeMl.toLocaleString()}` : '0'}
                       </span>
                     </div>
-                  </button>
+                    {/* Per-organ opacity slider — only when visible */}
+                    {on && (
+                      <div className="flex items-center gap-1.5 mt-0.5 pl-5">
+                        <input
+                          type="range" min={0.05} max={1} step={0.05} value={op}
+                          onChange={e => setOpacities(prev => ({ ...prev, [organ.id]: parseFloat(e.target.value) }))}
+                          onPointerUp={e => commitOrganOpacity(organ.id, parseFloat((e.target as HTMLInputElement).value))}
+                          className="flex-1 cursor-pointer"
+                          style={{ accentColor: organ.hex, height: '2px' }}
+                        />
+                        <span className="text-[9px] text-gray-600 w-6 text-right shrink-0 tabular-nums">
+                          {Math.round(op * 100)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
-            {Object.keys(organStats).length === 0 && (
+            {Object.keys(organStats).length === 0 && !loading && (
               <p className="text-[10px] text-gray-600 mt-2 px-1">Computing volumes…</p>
             )}
-          </section>
-
-          {/* Overlay opacity */}
-          <section className="p-3 border-b border-gray-800">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest block mb-2">
-              Overlay Opacity
-            </span>
-            <input
-              type="range" min={0.05} max={1} step={0.05} value={opacity}
-              onChange={e => setOpacity(parseFloat(e.target.value))}
-              onPointerUp={e => commitOpacity(parseFloat((e.target as HTMLInputElement).value))}
-              className="w-full accent-blue-500 cursor-pointer"
-            />
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-gray-600">Transparent</span>
-              <span className="text-[10px] text-blue-400 font-medium">{Math.round(opacity * 100)}%</span>
-            </div>
           </section>
 
           {/* ── Data Probe (from Slicer PDF slide 8) ── */}
