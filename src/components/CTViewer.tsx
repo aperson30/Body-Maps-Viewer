@@ -184,8 +184,8 @@ export default function CTViewer() {
     if (!nv) return;
     setViewMode(mode);
 
-    // Batch-write opacity directly on volume objects (no per-call GPU redraw).
-    // setSliceType at the end triggers the single unified drawScene call.
+    // Batch all opacity writes then commit to GPU once via updateGLVolume,
+    // then switch slice type (its internal drawScene picks up the new opacities).
     if (mode === '3d') {
       if (nv.volumes[0]) nv.volumes[0].opacity = 0.07;
       ORGANS.forEach((organ, i) => {
@@ -197,6 +197,7 @@ export default function CTViewer() {
         if (nv.volumes[i + 1]) nv.volumes[i + 1].opacity = visible[organ.id] ? opacity : 0;
       });
     }
+    nv.updateGLVolume(); // push all opacity changes to GPU in one shot
 
     const map: Record<ViewMode, number> = {
       axial:    nv.sliceTypeAxial,
@@ -205,7 +206,7 @@ export default function CTViewer() {
       mpr:      nv.sliceTypeMultiplanar,
       '3d':     nv.sliceTypeRender,
     };
-    nv.setSliceType(map[mode]); // triggers the single final drawScene
+    nv.setSliceType(map[mode]);
   }, [visible, opacity]);
 
   // ── W/L preset ─────────────────────────────────────────────────────────────
@@ -234,11 +235,10 @@ export default function CTViewer() {
     if (!nv) return;
     const next = Object.fromEntries(ORGANS.map(o => [o.id, show])) as Record<OrganId, boolean>;
     setVisible(next);
-    // Batch-write, single drawScene at end
     ORGANS.forEach((_, i) => {
       if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = show ? opacity : 0;
     });
-    nv.drawScene?.();
+    nv.updateGLVolume();
   }, [opacity]);
 
   // ── Opacity ────────────────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ export default function CTViewer() {
     ORGANS.forEach((organ, i) => {
       if (nv.volumes[i + 1] !== undefined) nv.volumes[i + 1].opacity = visible[organ.id] ? val : 0;
     });
-    nv.drawScene?.();
+    nv.updateGLVolume();
   }, [visible]);
 
   // ── File loading helpers ───────────────────────────────────────────────────
