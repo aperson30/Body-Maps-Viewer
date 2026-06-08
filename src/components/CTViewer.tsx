@@ -66,7 +66,6 @@ export default function CTViewer() {
   const [spacing, setSpacing] = useState<[number, number, number] | null>(null);
   const [showAbout,    setShowAbout]    = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [hoveredOrgan, setHoveredOrgan] = useState<OrganId | null>(null);
   const [organStats,   setOrganStats]   = useState<Partial<Record<OrganId, { volumeMl: number; meanHU: number }>>>({});
 
   // ── Init NiiVue ─────────────────────────────────────────────────────────────
@@ -523,13 +522,10 @@ export default function CTViewer() {
               {ORGANS.map(organ => {
                 const on   = visible[organ.id];
                 const stat = organStats[organ.id];
-                const hov  = hoveredOrgan === organ.id;
                 return (
                   <button
                     key={organ.id}
                     onClick={() => toggleOrgan(organ.id)}
-                    onMouseEnter={() => setHoveredOrgan(organ.id)}
-                    onMouseLeave={() => setHoveredOrgan(null)}
                     className={`flex items-center gap-2 px-2.5 py-1.5 rounded transition-all text-left ${
                       on ? 'bg-gray-800/80 text-white' : 'text-gray-600 hover:text-gray-400 hover:bg-gray-900'
                     }`}
@@ -538,20 +534,22 @@ export default function CTViewer() {
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: organ.hex, opacity: on ? 1 : 0.25 }}
                     />
-                    <div className="flex flex-col">
-                      <span>{organ.name}</span>
-                      {hov && (
-                        <span className="text-[9px] font-mono leading-tight" style={{ color: organ.hex }}>
-                          {stat
-                            ? `${stat.volumeMl.toLocaleString()} mL`
-                            : 'calculating…'}
-                        </span>
-                      )}
+                    <div className="flex flex-1 items-baseline justify-between gap-1 min-w-0">
+                      <span className="truncate">{organ.name}</span>
+                      <span
+                        className="text-[9px] font-mono shrink-0"
+                        style={{ color: stat ? organ.hex : 'transparent' }}
+                      >
+                        {stat ? `${stat.volumeMl.toLocaleString()} mL` : '———'}
+                      </span>
                     </div>
                   </button>
                 );
               })}
             </div>
+            {Object.keys(organStats).length === 0 && (
+              <p className="text-[10px] text-gray-600 mt-2 px-1">Computing volumes…</p>
+            )}
           </section>
 
           {/* Overlay opacity */}
