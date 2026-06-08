@@ -90,7 +90,7 @@ export default function CTViewer() {
       // Data Probe — fires on every crosshair move (mirrors Slicer's Data Probe panel)
       nv.onLocationChange = (data: any) => {
         setProbe({
-          hu:  data.values?.[0] != null ? Math.round(data.values[0]) : null,
+          hu:  (data.values?.[0] != null && isFinite(data.values[0])) ? Math.round(data.values[0]) : null,
           mm:  data.mm  ?? [],
           vox: data.vox ?? [],
         });
