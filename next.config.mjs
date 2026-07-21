@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config) => {
-    // NiiVue is browser-only; prevent bundling Node modulesss
+    // NiiVue is browser-only; prevent bundling Node moduless
     config.resolve.fallback = { fs: false, path: false };
     return config;
   },
