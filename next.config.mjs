@@ -2,7 +2,7 @@
 const nextConfig = {
   webpack: (config) => {
     // NiiVue is browser-only; prevent bundling Node modules
-    //tes
+    //te
     config.resolve.fallback = { fs: false, path: false };
     return config;
   },
